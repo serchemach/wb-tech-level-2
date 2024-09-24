@@ -3,11 +3,17 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
+	"time"
+
+	// "syscall"
+
+	// "io"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 /*
@@ -24,13 +30,20 @@ import (
 Программа должна проходить все тесты. Код должен проходить проверки go vet и golint.
 */
 
+type RunningProcess struct {
+	name  string
+	start time.Time
+}
+
+var runningProcesses map[int]RunningProcess
+
 type Command interface {
-	Exec([]string, io.Reader, io.Writer) error
+	Exec([]string, *os.File, *os.File, bool) error
 }
 
 type EmptyCommand struct{}
 
-func (c EmptyCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c EmptyCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
 	return nil
 }
 
@@ -48,7 +61,7 @@ func (e TooManyArgumentsError) Error() string {
 
 type CdCommand struct{}
 
-func (c CdCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c CdCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
 	if len(args) == 0 {
 		return NotEnoughArgumentsError{}
 	}
@@ -62,7 +75,7 @@ func (c CdCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error 
 
 type PwdCommand struct{}
 
-func (c PwdCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c PwdCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
 	dir, err := os.Getwd()
 	if err == nil {
 		stdout.Write([]byte(dir))
@@ -74,7 +87,7 @@ func (c PwdCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error
 
 type EchoCommand struct{}
 
-func (c EchoCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c EchoCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
 	for i, arg := range args {
 		if i != 0 {
 			stdout.Write([]byte(" "))
@@ -87,7 +100,7 @@ func (c EchoCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) erro
 
 type KillCommand struct{}
 
-func (c KillCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c KillCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
 	if len(args) == 0 {
 		return NotEnoughArgumentsError{}
 	}
@@ -111,7 +124,18 @@ func (c KillCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) erro
 
 type PsCommand struct{}
 
-func (c PsCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
+func (c PsCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
+	fmt.Fprintln(stdout, "PID TIME NAME")
+	for pid, process := range runningProcesses {
+		fmt.Fprintf(stdout, "%d %s %s\n", pid, time.Since(process.start).String(), process.name)
+	}
+	return nil
+}
+
+type ExitCommand struct{}
+
+func (c ExitCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
+	os.Exit(0)
 	return nil
 }
 
@@ -119,8 +143,27 @@ type ExecutableCommand struct {
 	name string
 }
 
-func (c ExecutableCommand) Exec(args []string, stdin io.Reader, stdout io.Writer) error {
-	return nil
+func (c ExecutableCommand) Exec(args []string, stdin *os.File, stdout *os.File, detach bool) error {
+	cmd := exec.Command(c.name, args...)
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+
+	var err error
+	if detach {
+		go func() {
+			err = cmd.Start()
+			runningProcesses[cmd.Process.Pid] = RunningProcess{
+				name:  c.name,
+				start: time.Now(),
+			}
+			err = cmd.Wait()
+			delete(runningProcesses, cmd.Process.Pid)
+		}()
+	} else {
+		err = cmd.Run()
+	}
+
+	return err
 }
 
 type Statement struct {
@@ -130,19 +173,27 @@ type Statement struct {
 }
 
 func (s Statement) Run() error {
-	var previousStdout io.Reader
+	var previousStdout *os.File
+	var wg sync.WaitGroup
+	var err error
 	for i, command := range s.pipeChain {
-		r, w := io.Pipe()
-		var err error
+		wg.Add(1)
+		r, w, err2 := os.Pipe()
+		if err2 != nil {
+			return err2
+		}
+
 		if i == len(s.pipeChain)-1 {
-			err = command.Exec(s.args[i], previousStdout, os.Stdout)
+			err = command.Exec(s.args[i], previousStdout, os.Stdout, s.detach)
 		} else {
-			err = command.Exec(s.args[i], previousStdout, w)
+			err = command.Exec(s.args[i], previousStdout, w, false)
+			w.Close()
 		}
 
 		if err != nil {
 			return err
 		}
+
 		previousStdout = r
 	}
 
@@ -170,6 +221,8 @@ func ParseCommand(name string) Command {
 		return KillCommand{}
 	case "ps":
 		return PsCommand{}
+	case "exit":
+		return ExitCommand{}
 	}
 
 	return ExecutableCommand{name}
@@ -182,10 +235,14 @@ func ParseStatement(s string) (Statement, error) {
 		args:      make([][]string, len(commands)),
 	}
 	for i, command := range commands {
-		fmt.Println(command)
 		tokens := strings.Split(strings.Trim(command, " "), " ")
 		if i != len(commands)-1 && tokens[len(tokens)-1] == "&" {
 			return Statement{}, WrongForkUseError{}
+		}
+
+		if tokens[len(tokens)-1] == "&" {
+			statement.detach = true
+			tokens = tokens[:len(tokens)-1]
 		}
 
 		statement.pipeChain[i] = ParseCommand(tokens[0])
@@ -197,9 +254,9 @@ func ParseStatement(s string) (Statement, error) {
 
 func main() {
 	l := log.New(os.Stderr, "", 1)
+	runningProcesses = make(map[int]RunningProcess)
 
 	for {
-		// var line string
 		curDir, err := os.Getwd()
 		if err != nil {
 			l.Fatal(err)
@@ -220,7 +277,6 @@ func main() {
 			fmt.Println(err)
 			continue
 		}
-		fmt.Println(statement)
 
 		err = statement.Run()
 		if err != nil {
