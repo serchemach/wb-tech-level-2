@@ -1,5 +1,13 @@
 package main
 
+import (
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"time"
+)
+
 /*
 === HTTP server ===
 
@@ -22,6 +30,40 @@ package main
 	4. Код должен проходить проверки go vet и golint.
 */
 
-func main() {
+func CreateEventHandler(w http.ResponseWriter, r *http.Request) {
 
+}
+
+func UpdateEventHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func DeleteEventHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func EventsForDayHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func EventsForWeekHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func EventsForMonthHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func main() {
+	l := log.New(os.Stdout, "", 0)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /create_event", CreateEventHandler)
+	mux.HandleFunc("POST /update_event", UpdateEventHandler)
+	mux.HandleFunc("POST /delete_event", DeleteEventHandler)
+	mux.HandleFunc("GET /events_for_day", EventsForDayHandler)
+	mux.HandleFunc("GET /events_for_week", EventsForWeekHandler)
+	mux.HandleFunc("GET /events_for_month", EventsForMonthHandler)
+	wrappedMux := NewLoggerMiddleware(mux, l)
+
+	log.Fatal(http.ListenAndServe(":8080", wrappedMux))
 }
