@@ -32,6 +32,10 @@ import (
 
 var eventStorage *EventStorage
 
+func init() {
+	eventStorage = NewEventStorage()
+}
+
 type Config struct {
 	Port    int    `json:"port"`
 	LogFile string `json:"log_file"`
@@ -48,8 +52,6 @@ func loadConfig() (Config, error) {
 }
 
 func main() {
-	eventStorage = NewEventStorage()
-
 	l := log.New(os.Stdout, "", 0)
 	config, err := loadConfig()
 	if err != nil {

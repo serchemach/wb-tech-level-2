@@ -23,7 +23,7 @@ func ParseInt(vals url.Values, valName string) (int, error) {
 
 	val, err := strconv.Atoi(valUnparsed)
 	if err != nil {
-		return 0, IncorrectParametersError{}
+		return 0, err
 	}
 	return val, nil
 }
@@ -36,7 +36,7 @@ func ParseDate(vals url.Values, valName string) (time.Time, error) {
 
 	val, err := time.Parse("2006-01-02", valUnparsed)
 	if err != nil {
-		return time.Time{}, IncorrectParametersError{}
+		return time.Time{}, err
 	}
 
 	return val, nil
@@ -50,7 +50,7 @@ func ParseEvent(vals url.Values) (Event, error) {
 
 	date, err := ParseDate(vals, "date")
 	if err != nil {
-		return Event{}, IncorrectParametersError{}
+		return Event{}, err
 	}
 
 	title := vals.Get("title")
@@ -79,7 +79,7 @@ func ParseUpdatingEvent(vals url.Values) (Event, error) {
 
 	eventId, err := ParseInt(vals, "event_id")
 	if err != nil {
-		return Event{}, err
+		return event, err
 	}
 	event.eventId = eventId
 
@@ -141,7 +141,6 @@ func FormSuccessfulResponse(s string) string {
 
 func CreateEventHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	fmt.Println(r.PostForm)
 
 	event, err := ParseEvent(r.PostForm)
 	if err != nil {
@@ -219,9 +218,8 @@ func EventsForWeekHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	weekStart := date.AddDate(0, 0, -int(date.Weekday())+1)
+	weekStart := date.AddDate(0, 0, -int(date.Weekday()))
 	weekEnd := date.AddDate(0, 0, 7-int(date.Weekday()))
-	fmt.Println(date, weekStart, weekEnd)
 
 	events := eventStorage.GetEvents(userId, weekStart, weekEnd)
 	w.WriteHeader(200)
@@ -239,7 +237,6 @@ func EventsForMonthHandler(w http.ResponseWriter, r *http.Request) {
 
 	monthStart := date.AddDate(0, 0, -date.Day()+1)
 	monthEnd := date.AddDate(0, 1, -date.Day())
-	fmt.Println(date, monthStart, monthEnd)
 
 	events := eventStorage.GetEvents(userId, monthStart, monthEnd)
 	w.WriteHeader(200)
