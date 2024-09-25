@@ -1,11 +1,11 @@
 package main
 
 import (
-	"io"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"time"
 )
 
 /*
@@ -30,32 +30,42 @@ import (
 	4. Код должен проходить проверки go vet и golint.
 */
 
-func CreateEventHandler(w http.ResponseWriter, r *http.Request) {
+var eventStorage *EventStorage
 
+type Config struct {
+	Port    int    `json:"port"`
+	LogFile string `json:"log_file"`
 }
 
-func UpdateEventHandler(w http.ResponseWriter, r *http.Request) {
+func loadConfig() (Config, error) {
+	file, _ := os.Open("config.json")
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	config := Config{}
+	err := decoder.Decode(&config)
 
-}
-
-func DeleteEventHandler(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func EventsForDayHandler(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func EventsForWeekHandler(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func EventsForMonthHandler(w http.ResponseWriter, r *http.Request) {
-
+	return config, err
 }
 
 func main() {
+	eventStorage = NewEventStorage()
+
 	l := log.New(os.Stdout, "", 0)
+	config, err := loadConfig()
+	if err != nil {
+		config.Port = 8080
+		l.Println("Error while loading the config:", err, ", defaulting to console log and port 8080")
+	} else {
+		file, err := os.OpenFile(config.LogFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		defer file.Close()
+
+		if err != nil {
+			l.Println("Error while opening the log file:", err, ", defaulting to console log")
+		} else {
+			l = log.New(file, "", 0)
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /create_event", CreateEventHandler)
 	mux.HandleFunc("POST /update_event", UpdateEventHandler)
@@ -65,5 +75,6 @@ func main() {
 	mux.HandleFunc("GET /events_for_month", EventsForMonthHandler)
 	wrappedMux := NewLoggerMiddleware(mux, l)
 
-	log.Fatal(http.ListenAndServe(":8080", wrappedMux))
+	fmt.Printf("Successfully started serving on port %d\n", config.Port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), wrappedMux))
 }

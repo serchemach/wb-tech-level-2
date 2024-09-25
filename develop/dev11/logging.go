@@ -71,7 +71,7 @@ func (m *LoggerMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	m.handler.ServeHTTP(rww, r)
 
-	m.logger.Printf("{\"request\": \"%s %s\", \"response\": \"%s\", \"time_taken\": \"%s\"}\n", r.Method, r.URL.Path, rww.String(), time.Since(start).String())
+	m.logger.Printf("{\"request\": \"%s %s\", \"response\": %s, \"time_taken\": \"%s\"}\n", r.Method, r.URL.Path, rww.String(), time.Since(start).String())
 }
 
 func NewLoggerMiddleware(handlerToWrap http.Handler, logger *log.Logger) *LoggerMiddleware {
