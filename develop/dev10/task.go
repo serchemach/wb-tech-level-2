@@ -1,15 +1,8 @@
 package main
 
 import (
-	// "errors"
 	"flag"
 	"io"
-	// "sync"
-	// "sync/atomic"
-
-	// "sync/atomic"
-
-	// "fmt"
 	"log"
 	"net"
 	"os"
