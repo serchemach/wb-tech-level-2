@@ -16,7 +16,7 @@ func test() *customError {
 		// do something
 	}
 	return nil
-}
+} 
 
 func main() {
 	var err error
@@ -31,6 +31,23 @@ func main() {
 
 Ответ:
 ```
-...
-
+error
 ```
+
+По той же причине, что и в вопросе 3. Просто тут неявное преобразование из customError в error из-за того что он стоит как тип возвращаемой переменной.
+
+По сути, код test() эквивалентен
+
+``` go
+func test() *customError {
+	var cusErr *customError
+	{
+		// do something
+	}
+	cusErr = nil
+	return cusErr
+} 
+```
+
+Просто здесь преобразование в error происходит не на этапе возврата, а на этапе присваивания к переменной типа error.
+
